@@ -10,59 +10,80 @@
       
       program MAIN
          implicit none
-         INTEGER LG(35), NG, TMP, i, NFI, iFlag, iLayerID, l, iError
+         integer :: LG(35), NG, TMP, i, NFI, iFlag, iLayerID, l, iError
          integer nCount, iDummy
+         integer :: nLayers = 20
          character(len=80) :: cText, cWITCHInp, cELEMInp, cJoinedOutput
          character(len=50), allocatable :: caJoinFileList(:)
+         character(len=4) :: caLoading(128)
+         character(len=30) :: cNuclearData = 'WD4TRIC.BIN'
+         integer, parameter :: NFIN = 29
 !     LayerID stores the ID of the TRIGA core z-axis cell layer that is
 !     is going to be processed.
 
       ! For command line argument's purpose.
       character(len=30) :: cArg, cForm
+      character(len=4)  :: cLoading
+
       NFI = 20
       iLayerID = 0
-         cWITCHInp = 'WITCH'
-         cELEMInp = 'ELEM'        
+         cWITCHInp = 'MAIN'
+         cELEMInp = 'FUEL_INVENTORY'  
+         cJoinedOutput = 'xsdata'
       if (iargc() .gt. 0) then
          
          do i=1, iargc(), 1
             call getarg(i, cArg)
             if (trim(cArg) .eq. '-in') then
                if((i+1) .gt. iargc()) then
-                  print*, ' Fatal Error: Invalid argument(s) input!'
+                  print*, ' Fatal Error: Invalid argument input!'
                   stop
                endif
                call getarg(i+1, cArg)
                cWITCHInp = trim(cArg)
+            elseif (trim(cArg) .eq. '-ndata') then
+               if((i+1) .gt. iargc()) then
+                  print*, ' Fatal Error: Invalid argument input!'
+                  stop
+               endif
+               call getarg(i+1, cArg)
+               cNuclearData = trim(cArg)
             elseif (trim(cArg) .eq. '-elem-in') then
                if((i+1) .gt. iargc()) then
-                  print*, ' Fatal Error: Invalid argument(s) input!'
+                  print*, ' Fatal Error: Invalid argument input!'
                   stop
                endif
                call getarg(i+1, cArg)
                cELEMInp = trim(cArg)
+            elseif (trim(cArg) .eq. '-out') then
+               if((i+1) .gt. iargc()) then
+                  print*, ' Fatal Error: Invalid -out input!'
+                  stop
+               endif
+               call getarg(i+1, cArg)
+               cJoinedOutput = trim(cArg)               
             elseif (trim(cArg) .eq. '-clean') then
                goto 51
             elseif (trim(cArg) .eq. '-join-tapes') then
                if((i+1) .gt. iargc()) then
-                  print*, ' Fatal Error: Incomplete argument(s) input!'
+                  print*, ' Fatal Error: Incomplete argument input!'
                   stop
                endif
                call getarg(i+1, cArg)
                read(cArg,'(I2)',iostat=iError) nCount
                if(iError .ne. 0) then
-                  print*, ' Fatal Error: Invalid argument(s) input!'
+                  print*, ' Fatal Error: Invalid argument input!'
                   stop
                endif
                allocate(caJoinFileList(nCount))
                if((i+2) .gt. iargc()) then
-                  print*, ' Fatal Error: Incomplete argument(s) input!'
+                  print*, ' Fatal Error: Incomplete argument input!'
                   stop
                endif
                call getarg(i+2, cArg)
                read(cArg,'(A)',iostat=iError) cJoinedOutput
                if(iError .ne. 0) then
-                  print*, ' Fatal Error: Invalid argument(s) input!'
+                  print*, ' Fatal Error: Invalid argument input!'
                   stop
                endif
                do l=1, nCount, 1
@@ -80,7 +101,7 @@
                goto 60
             elseif (trim(cArg) .eq. '-layer-id') then
                if((i+1) .gt. iargc()) then
-                  print*, ' Fatal Error: Invalid argument(s) input!'
+                  print*, ' Fatal Error: Invalid argument input!'
                   stop
                endif
                call getarg(i+1,cArg)
@@ -159,91 +180,58 @@
             endif
          enddo
       elseif(iargc() .eq. 0) then
-         cWITCHInp = 'WITCH'
-         cELEMInp = 'ELEM'      
+         cWITCHInp = 'MAIN'
+         cELEMInp = 'FUEL_INVENTORY'      
       endif
-      print*
-      print*, ' The input file is ',
-     &   trim(cWITCHInp) // '.INP', '.'
-      print*, ' The fuel element file is ',
-     &   trim(cELEMInp) // '.INP', '.'
-     
-         open(unit=20, file=trim(cWITCHInp) // '.INP', err=13,
-     &       status='OLD')
-         goto 14
-13       print*, ' Fatal Error: Could not load ',
-     &      trim(cWITCHInp), '.INP'
+
+      open(unit=NFIN, file=trim(cWITCHInp) // '.INP',
+     &     status='OLD', err=1111)
+      goto 1000
+1111  print*, ' Fatal Error: MAIN.INP is not found!'
+      stop
+      
+1000  call rasearch(NFIN, 0, '#NLAYERS', 8, cText, iFlag)
+      
+      if(iFlag .eq. 1) then
+         print*, 'WITCH: Fatal Error. NLAYERS card is not found!'
+         write(*,'(A,I0)') '  Line : ', abs(iFlag-1)
          stop
-14         continue
-         call rasearch(20, 0, '$* MACROGROUP', 13, cText, iFlag)
-         if (iFlag .gt. 0) goto 11
-         read (NFI,*) NG
-         write(cForm,'(I2,A2)') NG, 'I5'
-         read (NFI,*) (LG(i),i=1,NG)
-c         read (NFI,'('//cForm//')') (LG(i),i=1,NG)
-         close(unit=20)
-         goto 12
-11       print*, ' MACROGROUP card is not found in ',
-     &       trim(cWITCHInp) // '.INP.'
-          print*, ' Default option, N-GROUP=', 4
-         NG = 4
-         LG(1) = 5
-         LG(2) = 10
-         LG(3) = 21
-         LG(4) = 32    
-         
-12       continue
-
-!        Begin your code here...
-         call TRSTART(cWITCHInp, cELEMInp)
-         call WITRIG(cWITCHInp, cELEMInp)
-         print*, ' Launching WIMS code in 3 seconds...'
-         call sleep(1)
-         print*, ' Launching WIMS code in 2 seconds...'
-         call sleep(1)
-         print*, ' Launching WIMS code in 1 second...'
-         call sleep(1)
-         print*
-         call LOOXSB()
-         call XSWOUT(NG, LG, 0, cWITCHInp, iLayerID)
-         
-            print*
-            print'(A,I2.2)', '  Macrogroup Count    : ', NG
-            print'(A,$)',    '  Last Macrogroup No. : '
-            do i=1, NG, 1
-               print'(I2.2,A1,$)', LG(i), ' '
-            enddo
-            print*
-            if(iLayerID .ne. 0) then
-               print'(A,I10.10)', '  Layer ID            : ', iLayerID
-            endif
-            print*
-      print*, ' WITCH was successfully executed. The TRIGA',
-     &        ' cross section'
-     
-      if(iLayerID .eq. 0) then
-         print*, ' tape (WITCH-XSWOUT.TXS) has  been saved to ',
-     &        'current direc-'    
       else
-         write(cText,'(I10.10)') iLayerID
-         print*, ' tape (', trim(cText), '.TXS) has  been saved to ',
-     &        'current direc-'         
+         read(NFIN,*,err=1001) nLayers
       endif
+      goto 1002
+1001  print*, ' Fatal Error: NLAYERS card format error!'
+      stop      
+1002  continue
+      close(unit=NFIN)
 
-      print*, ' tory.'
-      print*  
-         goto 51
-50    print*
-      print*, ' Fatal Error: The last macrogroup number format is',
-     &           'incorrect.'
-51    print*, ' Cleaning current directory...'  
+      do i=1, nLayers, 1  !--------------------------------------!
+            call system("copy database\WD4TRIC.BIN WD4TRIC.BIN")
+      call TRSTART(cWITCHInp, cELEMInp, caLoading,LG,NG)   
+      call WITRIG(i, cWITCHInp, cELEMInp)           
+      call LOOXSB(trim(cNuclearData),i)            
+      call XSWOUT(NG, LG, 1, cWITCHInp, i, caLoading)  
       call system('del /q Wimi* WITCH-OUT.OUT'
      &          //        ' WIMS-IN.$$$ WIMS-OUT.$$$ *.TMP')
       call system('del /q FORT.*')
-      call sleep(2)
-      print*, ' WITCH has completed its job.'
-      print*
-60    print*, ' STOP:   W I T C H - OCT/17 - S T O P   (END JOB READ)'
+      
+      enddo
+      
+      call sleep(5)
+      allocate(caJoinFileList(nLayers))
+      do l=1, nLayers, 1
+         write(cArg,'(I10.10)') l
+         caJoinFileList(l) = trim(cArg)
+      enddo
+      call TXSJOINER(nLayers,caJoinFileList,trim(cJoinedOutput))
+      goto 60
+51    continue
+      call system('del /q Wimi* WITCH-OUT.OUT'
+     &          //        ' WIMS-IN.$$$ WIMS-OUT.$$$ *.TMP')
+      call system('del /q FORT.*')
+      
+60    continue
+
       end program
 
 

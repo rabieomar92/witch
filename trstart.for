@@ -7,12 +7,14 @@
 !     Project Name   : TRIGLAV.fip
 !     Source File    : trstart.for
 
-      subroutine trstart(pcWITCHInp, pcELEMInp)
+      subroutine trstart(pcWITCHInp, pcELEMInp, pcLoading, piLG, piNG)
       
       implicit none
       
       character(len=50), intent(in) :: pcWITCHInp, pcELEMInp
-      
+      character(len=4) , intent(out) :: pcLoading(128)
+     
+      integer, intent(out) :: piLG(35), piNG
 !     Declaring strings that store the input file name, output file name, 
 !     comments in the input file and a dummy variable that helps to search
 !     for input cards.
@@ -26,6 +28,9 @@
 !     output file.
       integer :: NFI, NFO
      
+!     Declaring the number of reactor core layers.
+      integer :: nCoreLayers
+      
 !     Declaring a control flag that tells whether an input card is found.
       integer :: iFlag
       
@@ -56,203 +61,211 @@
       integer :: iIsXe
 !     Declaing burnup interval in days.
       real :: rBuTau
-      integer :: i, j, k
-C-D  mreza: azimuthal mesh
+      integer :: i, j, k, iCellID
 
       data NFI, NFO / 5, 10 /
 
-      print*, ' Running ROUTINE-A.'
 !     Setting the file names to their default values.
-c      cFileIn  = 'WITCH.INP'
-c      cFileOut = 'WITCH.TMP'
 
       cFileIn = trim(pcWITCHInp) // '.INP'
       cFileOut = trim(pcWITCHInp) // '.TMP'
 
 !     Open files...
       open (unit=NFI, file=cFileIn, status='OLD', err=14)
-      open (unit=NFO, file=cFileOut, status='UNKNOWN', err=15)
 
-      call rasearch(NFI, 0, '$* WITCH', 8, cTextTrv, iFlag)
-      if (iFlag .gt. 0) goto 11
-      write (NFO,'(A)') '$* WITCH'
-      read  (NFI,'(A)') cComment
-      print*, ' ', cComment ! Display comment line 1 to console.
-      write (NFO,'(A)') cComment
-      read  (NFI,'(A)') cComment
-      print*, ' ', cComment ! Display comment line 2 to console.
-      write (NFO,'(A)') cComment
+! --------------------- MACROGROUP ------------------
+      call rasearch(NFI,0,'#MACROGROUP',11,cTextTrv,iFlag)
+      if (iFlag .gt. 0) goto 765
+      read (NFI,*,err=767) piNG
+      read (NFI,*,err=761) (piLG(i),i=1,piNG)
+      goto 766
+765   print*, 'WITCH: MACROGROUP card is not found in '//
+     &        ' the input file.'
+      print*, 'WITCH: Default option, G = 4.'
+      piNG = 4
+      piLG(1) = 5
+      piLG(2) = 10
+      piLG(3) = 21
+      piLG(4) = 32    
+766   continue
+      goto 768
+767   print*
+      print*, 'WITCH: Fatal error. Bad integer value'//
+     &      ' for macrogroup count.'
+      write(*,'(A,I0)') ' Line : ', abs(iFlag-1)
+      stop
+761   print*, 'WITCH: Fatal error. An integer '//
+     &    'list is expected'//
+     &    ' for the last microgroup number.'
+      write(*,'(A,I0)') ' Line : ', abs(iFlag-1) + 1
+      stop
+768   continue
 
-      call rasearch(NFI, 0, '$* FLAGS', 8, cTextTrv, iFlag)
-      if (iFlag .gt. 0) goto 11
-      read (NFI,*) iFlag1
-      read (NFI,*) iFlag2
-      read (NFI,*) iFlag3
-      read (NFI,*) iFlag4
-      
-      write (NFO,'(4I10,A)') iFlag1, iFlag2, iFlag3, iFlag4, 
-     &   ' ! print (xs.,inn.,flu.,fluf.)'
-
-      call rasearch(NFI, 0, '$* ITERATIONS', 13, cTextTrv, iFlag)
-      if (iFlag .gt. 0) goto 11
-      read (NFI,*) iFlag1
-      read (NFI,*) iFlag2
-      write (NFO,'(2I10,20X,A)') i,j,' ! iterations (inn.,out.)'
-
-      call rasearch(NFI, 0, '$* CONVERGENCE', 14, cTextTrv, iFlag)
-      if (iFlag .gt. 0) goto 11
-      read (NFI,*) rInnerIterLimit
-      read (NFI,*) rOuterIterLimit
-      read (NFI,*) rkeffLimit
-      write (NFO,'(3E10.3,10X,A)') rInnerIterLimit, rOuterIterLimit,
-     &       rkeffLimit,' ! e(inn.),e(out.),e(k)'
-      write (NFO,'(2I5,30X,A)') 4, 4,' ! no. groups'
-      write (NFO,'(4F10.8,A)') 1.0, 0.0, 0.0, 0.0,' ! hi'
-      
-      call rasearch(NFI,0,'$* BUCKLING', 11, cTextTrv, iFlag)
-      if (iFlag.GT.0) goto 11
-      read (NFI,*) rBuckling
-      write (NFO,'(4F10.8,A)') rBuckling, rBuckling, rBuckling,
-     &      rBuckling,' ! buckling'
-
-      call rasearch(NFI,0,'$* POWER',8, cTextTrv, iFlag)
-      if (iFlag .gt. 0) goto 11
-      read  (NFI,*) rPthRe
-      write (NFO,'(A)') '$* POWER'
-      write (NFO,'(F10.4)') rPthRe
-
-      call rasearch(NFI,0,'$* TWATER',9, cTextTrv, iFlag)
-      if (iFlag .gt. 0) goto 11
-      read (NFI,*) rTempLW
-      write (NFO,'(A)') '$* TWATER'
-      write (NFO,'(F10.4)') rTempLW
-
-      call rasearch(NFI,0,'$* XENON',8, cTextTrv, iFlag)
-      if (iFlag .gt. 0) goto 11
-      read (NFI,*) iIsXe
-      write (NFO,'(A)') '$* XENON'
-      write (NFO,*) iIsXe
-
-      call rasearch(NFI,0,'$* BURNUP',9, cTextTrv, iFlag)
-      if (iFlag .gt. 0) goto 11
-      read (NFI,*) rBuTau
-      write (NFO,'(A)') '$* BURNUPD'
-      write (NFO,*) rBuTau
-
-      call rasearch(NFI,0,'$* RINGS',8, cTextTrv, iFlag)
-      if (iFlag .gt. 0) goto 11
-      read (NFI,*) iRing
-      if ((iRing .gt. 7) .or.(iRing .lt. 6)) goto 12
-
-      call rasearch(NFI,0,'$* MESH',7, cTextTrv, iFlag)
-      if (iFlag .gt. 0) goto 11
-      read (NFI,*) iMesh
-      if (iMesh .lt. 10) then
-         do i=1, 102, 1
-            iaMeshNetwork(i) = 1
-         enddo
-      endif
-      
-      if (iMesh .ge. 10) then
-         do i=0, 5, 1
-            do j=1, 3, 1
-               iaMeshNetwork(17*i+j) = 1
-            enddo
-            iaMeshNetwork(17*i+4)  = 2 
-            iaMeshNetwork(17*i+5)  = 1 
-            iaMeshNetwork(17*i+6)  = 2 
-            iaMeshNetwork(17*i+7)  = 1 
-            iaMeshNetwork(17*i+8)  = 2 
-            iaMeshNetwork(17*i+9)  = 2 
-            iaMeshNetwork(17*i+10) = 1
-            iaMeshNetwork(17*i+11) = 2 
-            iaMeshNetwork(17*i+12) = 1 
-            iaMeshNetwork(17*i+13) = 2 
-            do j=14, 16, 1
-               iaMeshNetwork(17*i+j) = 1
-            enddo
-            iaMeshNetwork(17*i+17) = 4
-         enddo 
-      endif
-
-      write (NFO,'(A)') '$* SHEMA1'
-      i=102
-      write (NFO,'(16I5)') iRing + 1, i
-      if (iRing .eq. 6) THEN
-         write (NFO,'(16I5)') 1,6,12,18,24,30,1
-!        Dimensions of 6 rings in the core (Radius).
-         write (NFO,'(8F10.4)')
-     &   2.027, 6.0175, 9.9595, 13.927, 17.902, 22.06, 54.5
-!        Number of meshes in each fuel ring.
-         if (iMesh .eq. 1)  write (NFO,'(16I5)') 1,1,1,1,1,1,2
-         if (iMesh .eq. 2)  write (NFO,'(16I5)') 6,6,6,6,6,6,18
-         if (iMesh .eq. 3)  write (NFO,'(16I5)') 10,10,10,10,10,10,30
-         if (iMesh .eq. 11) write (NFO,'(16I5)') 1,2,2,2,2,2,16
-         if (iMesh .eq. 12) write (NFO,'(16I5)') 3,6,6,6,6,6,48
-         if (iMesh .eq. 13) write (NFO,'(16I5)') 6,12,12,12,12,12,24
+! --------------------- POWER --------------------------      
+      call rasearch(NFI,0,'#POWER',6, cTextTrv, iFlag)
+      if (iFlag .gt. 0) then
+         print*, 'WITCH: POWER card is not found in '//
+     &         ' the main input file (MAIN.INP).'
+         print*, 'WITCH: Core power will be set to '//
+     &         'zero (~0.01kW).'
+         rPthRe = 0.01
       else
-         write (NFO,'(16I5)') 1,6,12,18,24,30,36,1
-!        Dimensions of 7 rings in the core (Radius)
-         write (NFO,'(8F10.4)')
-     &   2.3125,6.12,10.08,14.07,18.06,22.06,26.06,58.5
-!        Number of meshes in each fuel ring.
-         if (iMesh .eq. 1)  write (NFO,'(16I5)') 1,1,1,1,1,1,1,2
-         if (iMesh .eq. 2)  write (NFO,'(16I5)') 6,6,6,6,6,6,6,18
-         if (iMesh .eq. 3)  write (NFO,'(16I5)') 10,10,10,10,10,10,10,30
-         if (iMesh .eq. 11) write (NFO,'(16I5)') 1,2,2,2,2,2,2,16
-         if (iMesh .eq. 12) write (NFO,'(16I5)') 3,6,6,6,6,6,6,48
-         if (iMesh .eq. 13) write (NFO,'(16I5)') 6,12,12,12,12,12,12,22
+         read (NFI,*,err=201) rPthRe
       endif
-      write (NFO,'(16I5)') (iaMeshNetwork(i), i=1, 102)
-
-      call rasearch(NFI,0,'$* LOADING',10, cTextTrv, iFlag)
-      if (iFlag .gt. 0) goto 11
-      write (NFO,'(A)') '$* SHEMA2'
-!     Read and write the loading of the first ring, A-1.
-      read (NFI,'(2x,1x,A4,1x,A4)') cIden(1), cElem(1)
-      write (NFO,'(1x,A4,1x,A4)') cIden(1), cElem(1)
       
+      goto 301
+201   print*, 'WITCH: Fatal error.'//
+     &      ' Invalid POWER card parameter!'
+      write(*,'(A,I0)') ' Line : ', abs(iFlag-1)
+      stop
+      goto 100
+      
+301   rewind NFI
+! --------------------- TCOOL -------------------------- 
+
+      call rasearch(NFI,0,'#TCOOL',6, cTextTrv, iFlag)
+      if (iFlag .gt. 0) then
+         print*, 'WITCH: TCOOL card is not found in '//
+     &         ' the main input file (MAIN.INP).'
+         print*, 'WITCH: Coolant temperature will '//
+     &         'be set at 300K.'
+         rTempLW = 300.0
+      else
+         read (NFI,*,end=202,err=202) rTempLW
+      endif
+      goto 302
+202   print*, 'WITCH: Fatal error. Invalid TCOOL '//
+     &         'card parameter.'
+      write(*,'(A,I0)') ' Line : ', abs(iFlag-1)
+      stop
+      
+302   rewind NFI
+
+! --------------------- NLAYERS -------------------------- 
+      call rasearch(NFI,0,'#NLAYERS',8, cTextTrv, iFlag)
+      if (iFlag .gt. 0) then
+         print*, 'WITCH: Fatal error. NLAYERS '//
+     &      'card is not found the main input file (MAIN.INP).'
+         stop
+      endif
+      read (NFI,*,end=203,err=203) nCoreLayers
+      goto 303
+203   print*, 'WITCH: Fatal error. Invalid NLAYERS'//
+     &   ' card parameter.'
+      write(*,'(A,I0)') ' Line : ', abs(iFlag-1)
+      stop
+      
+303   rewind NFI
+      
+! --------------------- XENON -------------------------- 
+      call rasearch(NFI,0,'#XENON',6, cTextTrv, iFlag)
+      if (iFlag .gt. 0) then
+         print*, 'WITCH: XENON card is not found'//
+     &         ' in the main input file (MAIN.INP). '//
+     &         'Xenon monitor is off.'
+         iIsXe = 0
+      else
+         read (NFI,*,end=204,err=204) iIsXe
+      endif
+      
+      goto 304
+204   print*, 'WITCH: Fatal error. Bad XENON card'//
+     &      ' parameter input!'
+      write(*,'(A,I0)') ' Line : ', abs(iFlag-1)
+      goto 100
+304   rewind NFI
+
+! --------------------- BURNUP -------------------------- 
+      call rasearch(NFI,0,'#BURNUP',7, cTextTrv, iFlag)
+      if (iFlag .gt. 0) then
+         print*, 'WITCH: Fatal error. BURNUP'//
+     &      ' card is not found in'//
+     &      ' the main input file (MAIN.INP).'
+         stop
+      endif
+      read (NFI,*,end=205,err=205) rBuTau
+      goto 305
+205   print*, 'WITCH: Fatal error. Invalid BURNUP'//
+     &      ' card parameter!'
+      write(*,'(A,I0)') ' Line : ', abs(iFlag-1) 
+      stop
+305   rewind NFI
+
+! --------------------- NRINGS -------------------------- 
+      call rasearch(NFI,0,'#NRINGS',7, cTextTrv, iFlag)
+      if (iFlag .gt. 0) then
+         print*, 'WITCH: Fatal error. NRINGS '//
+     &      'card is not found!'
+         stop
+      endif
+      read (NFI,*,end=206,err=206) iRing
+      goto 306
+206   print*, 'WITCH: Fatal error. Invalid NRINGS'//
+     &     ' card parameter!'
+      write(*,'(A,I0)') ' Line : ', abs(iFlag-1)   
+      stop
+306   rewind NFI
+      
+! --------------------- LOADING -------------------------- 
+      call rasearch(NFI,0,'#CORECONFIG',11, cTextTrv, iFlag)
+      if (iFlag .gt. 0) then
+         print*, 'WITCH: Fatal error. CORECONFIG '//
+     &         'card is not found!'
+         stop
+      endif
+!     Read and write the loading of the first ring, A-1.
+      read (NFI,'(A4,1x,A4)') cIden(1), cElem(1)
+!     Write to the output parameter. This is for TXS file cell type identifying purpose.
+      pcLoading(1) = cElem(1)
+      iCellID = 2
 !     Read and write fuel elements loading for row 2 - 6
       do i=1, 15, 1
-         read (NFI,'(2x,6(1x,A4,1x,A4))') (cIden(j), cElem(j), j=1, 6)
-         write (NFO,'(6(1x,A4,1x,A4))')   (cIden(j), cElem(j), j=1, 6)         
+         read (NFI,'(A4,1x,A4,5(1x,A4,1x,A4))', end=13, err=13) 
+     &         (cIden(j), cElem(j), j=1, 6)
+         do k=1, 6, 1
+            pcLoading(iCellID) = cElem(k)
+            iCellID = iCellID + 1
+         enddo
       enddo
 !     Read and write row 7 (G ring) for reactors with 7 fuel rings.
       if (iRing .eq. 7) then
          do j=1, 6, 1
-            read (NFI,'(2x,6(1x,A4,1x,A4))', end=13) 
+            read (NFI,'(A4,1x,A4,5(1x,A4,1x,A4))', end=13, err=13) 
      &            (cIden(i), cElem(i),i=1, 6)
-            write (NFO,'(6(1x,A4,1x,A4))') (cIden(i), cElem(i), i=1, 6)
+            do k=1, 6, 1
+               pcLoading(iCellID) = cElem(k)
+               iCellID = iCellID + 1
+            enddo
          enddo
       endif
 
-!     Read  and write reflector type
-      read  (NFI,'(2x,1x,A4,1x,A4)') cIden(1), cElem(1)
-      write (NFO,'(1x,A4,1x,A4)')    cIden(1), cElem(1)
+!     Read and write reflector type
+!      read  (NFI,'(A4,1x,A4)', end=13, err=13) cIden(1), cElem(1)
+      pcLoading(iCellID) = '   R'
 
-!     rewrite $* WIMSOUTPUT
       rewind NFI
-      call rasearch(NFI,0,'$* WIMSOUTPUT',13, cTextTrv, iFlag)
-      if (iFlag.EQ.0) write (NFO,'(A)') '$* WIMSOUTPUT'
 
       goto 99
 
 C-D  error end of program
 11    print *,' Fatal Error: Input file parameters are incorect!'
       goto 100
-12    print *,' Fatal Error: Number of fuel rings is incorect!'
+12    print *,' Fatal Error: Invalid fuel rings count!'
       goto 100    
-13    print *,' Fatal Error: Core loading pattern is incorect!'
+13    print *,' Fatal Error: Incorrect core configuration pattern!'
       goto 100
-14    print *,' Fatal Error: Cannot find the input file.'
+14    print *,' Fatal Error: MAIN.INP is not found.'
       goto 100
-15    print *, 'Fata; Error: Cannot create the output file.'
+15    print *, 'Fatal Error: Cannot create the output file.'
       goto 100
       
 C-D  normal end of program
-99    print *,' ROUTINE-A completed.'
+99    continue
+      goto 111
 100   close (NFI)
-      close (NFO)
+      stop
+111   close (NFI)
+      return
       
       end subroutine
       
@@ -277,10 +290,12 @@ C-D  normal end of program
          
          piFlag = 0
          i = pnSkip
+         rewind pNF
 1        continue
+         piFlag = piFlag - 1
          read(pNF,'(A,A)', end=999) pcTextRV
          if(pcText(1:pnTextLen) .ne. pcTextRV(i+1:i+pnTextLen)) goto 1
          return
-999      piFlag = 1
+999      piFlag = abs(piFlag)
          return
       end subroutine

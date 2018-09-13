@@ -35,40 +35,44 @@
 !
 ! ** Parameter definitions:
 !
-!          pNF       - File unit number for WIMInnn.WIN file
-!          pNFO      - File unit number for WiTrig.PRI output file.
+!          pNF       - File unit number for WIMInnn.WIN file.
 !          pcCellType - Unit cell element type ST8? ST12? LEU?
 !          prDensityUZrH - Density in g cm-3 of Uranium.
 !          prWtU235    - Weight percent of U-235 in that element.
 !          prWtEr166   - Weight percent of Er-166 in that element. For LEU and FLIP only.
 !          prWtEr167   - Wieght percent of Er-167 in that element. For LEU and FLIP only.
 
-      subroutine WimCom(pNF, pNFO, pcCellType, 
+      subroutine WimCom(pNF, pcCellType, 
      &                  prDensityUZrH, prWtU235, prWtEr166,
      &                  prWtEr167, prPEl, prFuelTemp,
      &                  prTempLW, prDensityLW, prMassUZrH,
-     &                  prBuMW, pnIsXe)
+     &                  prBuMW, pnIsXe, piCladType, prCellRadius,
+     &                  prCoreRadius,prReflectorThickness,
+     &                  prBuckling,pnCoreLayers,praPSpec, prPrevTau)
          implicit none
          character*(*) pcCellType
-         integer, intent(in) :: pNF, pNFO, pnIsXe
+         integer, intent(in) :: pNF, pnIsXe, piCladType, pnCoreLayers
          real   , intent(in) :: prDensityUZrH, prDensityLW
-         real   , intent(in) :: prFuelTemp, prTempLW
+         real   , intent(in) :: prFuelTemp, prTempLW, prCellRadius
          real   , intent(in) :: prPEl, prBuMW, prMassUZrH, prWtU235,
-     &                          prWtEr166, prWtEr167
+     &                          prWtEr166, prWtEr167, prBuckling,
+     &                          prCoreRadius,prReflectorThickness
+         real   , intent(in) :: praPSpec(5), prPrevTau
          real                :: rTempZr, rTempBe, 
      &                          rTempAl, rTempC, 
      &                          rTempFe
 !     Declaring fuel burnup and mass of UZrH in ton unit (TU)
       real :: rBuMWTU, rMassUZrHTU
 !     Specific power per element, in MW/TU Uranium.
-      real :: rPsp, rPsp10
+      real :: rPsp, rPsp0
 !     Time-steps for WIMS POWERC card in day(s).
-      real :: rDay1, rDay2, rDay3
+      real :: rDay0, rDay2, rDay3
 !     Time-step multipliers for WIMS POWERC card in days(s).
-      integer :: nX1, nX2, nX3
+      integer :: nX0, nX2, nX3
 !     WIMS POWERC burnup control check.
       real rBuMWTUControl
       
+!     Here Rabie declare his own version of burnup steps.
       rTempZr = prFuelTemp
       rTempBe = prTempLW
       rTempAl = prTempLW
@@ -112,105 +116,157 @@
 !     Parameters:
 !        
 !        (1) rPsp = RQ = MW/TU (per ton unit) initial Uranium fuel elements.   
-!        (2) rDay1
+!        (2) rDay0
 !     rPsp, Days, POWERC Card Steps (begin)
 !     prBuMW: BU from ELEM.INP [MWd]
 !     prMassUZrH: Uranium mass [g] from ELEM.INP -> conversion to ton(1000kg)
 
 ! -------------- REGION BEGIN: if THE UNIT CELL IS A FUEL CELL ----------------
-      if(pcCellType .eq. 'ST12' .or. pcCellType .eq. 'ST8 '.or. 
-     &   pcCellType .eq. 'LEU ' .or. pcCellType .eq. 'FLIP') then
+      if(pcCellType .eq. 'FE12' .or. pcCellType .eq. 'FE08' .or. 
+     &   pcCellType .eq. 'LEUR' .or. pcCellType .eq. 'FLIP' .or.
+     &   pcCellType .eq. 'FE20') then
 
          if(prMassUZrH .eq. 0.0) then
-            write(pNFO,*)  pcCellType
-            write(pNFO,*) 'Fatal Error: Mass of Uranium is 0.0 kg.'
-            stop 'Fatal Error: Mass of Uranium is 0.0 kg.'
+            print*, ' Fatal Error: Mass of Uranium is 0.0 kg.'
+            stop
          endif
       
 !        Convert mass of uranium in [g] into tons [TU]
-         rMassUZrHTU = prMassUZrH * 1.0E-6
+         rMassUZrHTU = prMassUZrH * 1.0E-6 
 !        Calculate fuel burnup per unit ton of uranium.
-         rBuMWTU  = prBuMW / rMassUZrHTU
+         rBuMWTU  = prBuMW / (rMassUZrHTU)
 
 !        -----------------------------------------------------------------------
 !        Here we define the specific fuel element power (Psp).
 !        This defines fuel element power per mass of UZrH in TU for TRIGA fresh
 !        fuel. MW/TU
 !        -----------------------------------------------------------------------
-
-!        rPsp10 is the specific fuel element power of TRIGA fresh fuel (10kW/el)
-         rPsp10 = (10.0 / 1000.0)  / rMassUZrHTU ! 10kW/mass U (TU)
-         rPsp   = (prPEl / 1000.0) / rMassUZrHTU
-!        rDay1, rDay2 and rDay3 are variables that stores the number of days that the fuel has burned up.  
-         rDay1 = 100.0
+!        HERE WE CALCULATE THE SPESIFIC POWER (rPsp0) IN MW/TU FOR BURNUP COR-
+!        RECTION. ANY VALUE OF prPEl MAY NOT AFFECT NEUTRON CROSS SECTIONS.
+!        IT IS IMPORTANT TO NOTE THAT prPEl IS IN kW. HERE WE ADJUST THE BURNUP
+!        STEP TO 0.1MWd.
+!        -----------------------------------------------------------------------
+         if (pcCellType .eq. 'FE08') then 
+            rPsp0 = (praPSpec(1) / (1000.0))
+     &                / rMassUZrHTU
+            rDay0 = 0.1 / (praPSpec(1) / (1000.0))
+         elseif (pcCellType .eq. 'FE12') then
+            rPsp0 = (praPSpec(2) / (1000.0)) 
+     &               / rMassUZrHTU
+            rDay0 = 0.1 / (praPSpec(2) / (1000.0))
+         elseif (pcCellType .eq. 'FE20') then
+            rPsp0 = (praPSpec(3) / (1000.0)) 
+     &               / rMassUZrHTU
+            rDay0 = 1.0 / (praPSpec(3) / (1000.0))
+         elseif (pcCellType .eq. 'FLIP') then
+            rPsp0 = (praPSpec(4) / (1000.0)) 
+     &               / rMassUZrHTU
+            rDay0 = 1.0 / (praPSpec(4) / (1000.0))
+         elseif (pcCellType .eq. 'LEUR') then
+            rPsp0 = (praPSpec(5) / (1000.0)) 
+     &               / rMassUZrHTU
+            rDay0 = 1.0 / (praPSpec(5) / ( 1000.0))
+         endif
+         
+!        ONCE THE FUEL HAS BEEN CORRECTED TO THE CURRENT BURNUP LEVEL, WE CAL-
+!        CULATE THE CURRENT OPERATING FUEL POWER IN kW/TU.
+         rPsp   = (prPEl/(1000.0)) / (rMassUZrHTU)
+  
          rDay2 = 1.0
          rDay3 = 0.01
 !        Defining the multiplier of the timestep.         
-         nX1 = 1
+         nX0 = 1
          nX2 = 1
          nX3 = 2
       
-!        PE*0.01*2 > Burnup with input
+!        -----------------------------------------------------------------------
+!        HERE WE CALCULATE THE NUMBER OF DAYS FOR THE BURNUP STEP THAT ACCOUNTS
+!        THE BURNUP LEVEL AFTER CURRENT REACTOR OPERATION. 
+!        -----------------------------------------------------------------------
+!        RECALL THAT:
+!        FIRST PLACE, WE BRING THE FUEL BURNUP LEVEL TO THE CURRENT BURNUP LEVEL
+!        BEFORE CURRENT REACTOR OPERATION. NOW, WE HAVE TO ACCOMODATE CURRENT 
+!        FUEL BURNUP DUE TO CURRENT OPERATION. HERE WE APPROXIMATE THE WORKING
+!        TIME PERIOD OF CURRENT OPERATION TO 0.01DAY.
+!        
          if (rPsp * rDay3 * nX3 .gt. rBuMWTU) then
             nX3 = 1
             rDay3 = rBuMWTU / rPsp
          endif
-         
-!        First POWERC Card (10kW*rDni1*nX1=rBuMWTU-PE*0.01*2)
-         nX1    = (rBuMWTU - rPsp * rDay3 * nX3) / (rPsp10 * rDay1)
-       
-!        Remainder
-         rDay2 = (rBuMWTU - rPsp * rDay3 * nX3 - rPsp10 * rDay1 *
-     &           nX1) / (rPsp10 * nX2)
-      
-!        rPsp, Days, Steps for the POWERC card (end)
-!        Control: See and monitor whether the total powerc card parameters sum to the total fuel burnup per 
-!        unit ton, rBuMWTU. If rBuMWTUControl = rBuMWTU then the control check is passed.
-         rBuMWTUControl = rPsp10 * rDay1 * nX1 + rPsp10 * rDay2 *
-     &                    nX2 + rPsp * rDay3 * nX3
-         write(pNFO,*) '  | '
-         write(pNFO,*) '  |____  B U R N U P   C A L C U L A T I O N'
-         write(pNFO,*) '         Mass of Uranium [g],[T]    =',
-     & prMassUZrH, rMassUZrHTU
-         write(pNFO,*) '         Fuel Burnup [MWd],[MWD/TU] =',
-     &      prBuMW, rBuMWTU
-         write(pNFO,*) '         Burnup [MWd/TU], Control   =', rBuMWTU, 
-     &      rBuMWTUControl
-         write(pNFO,*)
 
-         if(pcCellType .eq. 'ST12') then
+!        -----------------------------------------------------------------------
+!                   B U R N U P    S C E N A R I O    E X A M P L E
+!        -----------------------------------------------------------------------
+!        IN THIS CODE, EACH BURNUP STEP IS SET TO 0.1MWd. SO, FOR A FUEL ELEMENT
+!        WITH 2.41MWd BURNUP, THUS WE DIVIDE THE BURNUP STEPS AS FOLLOWING:
+!
+!           0.1MWd WITH 24 BURNUP STEPS WITH 0.01MWd REMAINDER.
+!
+!        FOR A 190g URANIUM FUEL OPERATING AT 10kW, THE SPECIFIC FUEL POWER IS
+!        GIVEN BY 52.6315789 MW/TU. THUS FOR EACH BURNUP STEP, 
+!
+!           0.1MWd = 52.6315789 * NDAYS
+!
+!        THUS FOR EACH BURNUP STEP, THE NUMBER OF DAYS IS 0.0019 DAYS. WE CAN
+!        TREAT THIS SIMILIARLY FOR THE BURNUP REMAINDER. THE PURPOSE OF DIVIDING
+!        BURNUP LEVEL INTO SEVERAL STEPS IS FOR FLUX SPECTRUM RE-CALCULATION
+!        IN CELL CALCULATION AFTER EACH BURNUP STEPS. THUS THE CALCULATION WILL
+!        BE ACCURATE AS POSSIBLE.
+!
+!        HERE, WE CALCULATE THE NUMBER OF BURNUP STEPS TO ACCOMODATE THE TOTAL
+!        BURNUP LEVEL OF THE FUEL. 
+         nX0    = (rBuMWTU - rPsp * rDay3 * nX3) / (rPsp0 * rDay0)
+       
+!        HERE WE CALCULATE THE NUMBER OR DAYS FOR THE REMAINING BURNUP LEVEL.
+         rDay2 = (rBuMWTU - rPsp * rDay3 * nX3 - rPsp0 * rDay0 *
+     &           nX0) / (rPsp0 * nX2)
+      
+!        THIS IS FOR PROGRAMMER BURNUP CONTROL CHECK. PLEASE DISREGARD THIS.
+         rBuMWTUControl = rPsp0 * rDay0 * nX0 + rPsp0 * rDay2 *
+     &                    nX2 + rPsp * rDay3 * nX3
+     
+!        HERE WE WRITE THE APPROPRIATE WIMS INPUT. 
+         if(pcCellType .eq. 'FE20') then
+            call WST20INP(pNF, prDensityUZrH, prFuelTemp, prWtU235,
+     &                    rTempFe, prDensityLW, prTempLW, 
+     &                    rTempZr, 1, piCladType, prCellRadius,
+     &                    prBuckling)
+         endif
+         if(pcCellType .eq. 'FE12') then
             call WST12INP(pNF, prDensityUZrH, prFuelTemp, prWtU235,
      &                    rTempFe, prDensityLW, prTempLW, 
-     &                    rTempZr, 1)
+     &                    rTempZr, 1, piCladType, prCellRadius,
+     &                    prBuckling)
          endif
-         if(pcCellType .eq. 'ST8 ') then
+         if(pcCellType .eq. 'FE08') then
             call WST8INP(pNF, prDensityUZrH, prFuelTemp, prWtU235,
-     & rTempFe, prDensityLW, prTempLW, rTempZr, 1)
+     &   rTempFe, prDensityLW, prTempLW, rTempZr, 1, 
+     &   piCladType, prCellRadius, prBuckling)
          endif
       
 !     Printout POWERC ...
-         if(rDay1 .eq. 0.0) nX1 = 0       
+         if(rDay0 .eq. 0.0) nX0 = 0       
          if(rDay2 .eq. 0.0) nX2 = 0       
          if(rDay3 .eq. 0.0) nX3 = 0       
 
-         if(rPsp10 .eq. 0.0) nX1 = 0       
-         if(rPsp10 .eq. 0.0) nX2 = 0       
+         if(rPsp0 .eq. 0.0) nX0 = 0       
+         if(rPsp0 .eq. 0.0) nX2 = 0       
          if(rPsp   .eq. 0.0) nX3 = 0       
 
-         if(nX1 .gt. 0) call fPowerC(pNF, rPsp10, rDay1, nX1 , 1, 0, 0)
-         if(nX1 .gt. 0 .and. nX2 .gt. 0)
+         if(nX0 .gt. 0) call fPowerC(pNF, rPsp0, rDay0, nX0 , 1, 0, 0)
+         if(nX0 .gt. 0 .and. nX2 .gt. 0)
      &      write(pNF,'(A/A)') 'BEGINC', 'BEGINC'
-         if(nX2 .gt. 0) call fPowerC(pNF, rPsp10, rDay2, nX2, 1, 0, 0)
-         if(nX3 .gt. 0 .and. (nX1 .gt. 0 .or. nX3 .gt. 0))
+         if(nX2 .gt. 0) call fPowerC(pNF, rPsp0, rDay2, nX2, 1, 0, 0)
+         if(nX3 .gt. 0 .and. (nX0 .gt. 0 .or. nX3 .gt. 0))
      &                  write(pNF,'(A/A)') 'BEGINC', 'BEGINC'
          if(nX3 .gt. 0) call fPowerC(pNF, rPsp, rDay3, nX3,1,0,0)
  
-!     no combustion
-         if(nX1 .eq. 0 .and. nX2 .eq. 0 .and. nX3 .eq. 0)
+!     no combustion a.k.a if the fuel is still fresh..
+         if(nX0 .eq. 0 .and. nX2 .eq. 0 .and. nX3 .eq. 0)
      &      call fPowerC(pNF, 0.0, 0.0, 0, 1, 0, 0)
          write(pNF,'(A)') 'BEGINC'
-         write(pNF,'(A)') 'LEAKAGE 5'
-         write(pNF,'(A)') 'BUCKLING 0.0  0.00464'
+c         write(pNF,'(A)') 'LEAKAGE 5'
+         write(pNF,'(A,F7.5)') 'BUCKLING 0.00000 ', prBuckling
          write(pNF,'(A)') 'BEGINC'
          if(pnIsXe .eq. 0) call fPowerC(pNF, 0.0, 0.0, 0, 1, 1, 0)
          call fPowerC(pNF, 0.0, 0.0, 0, 0, 0, 1)
@@ -224,39 +280,47 @@
 !     Generate WIMS input file WIMInnn.WIN according to cell type (G, GR, W, LW, ...)
 !     But the cell type is not of a FUEL type.   
 
-         write(pNFO,*) '  | '
-         write(pNFO,*) '  |____  B U R N U P   C A L C U L A T I O N'
-         write(pNFO,*) '         Not applicable. It is not a fuel cell.'
-         write(pNFO,*)
+ 
          if(pcCellType .eq. 'G   ') then
-            call WGINP(pNF,prFuelTemp,rTempAl,rTempC)
+c            call WGINP(pNF,prFuelTemp,rTempAl,rTempC, prCoreRadius,
+c     &                 prReflectorThickness)
+            call WGR2INP(pNF,prDensityLW,prTempLW,rTempC,rTempAl,
+     &                  prFuelTemp, prCellRadius, prBuckling)
          endif
-         if(pcCellType .eq. 'GR  ') then
-            call WGRINP(pNF,prDensityLW,prTempLW,rTempC,rTempAl)
+         if(pcCellType .eq. 'GRAP') then
+            call WGRINP(pNF,prDensityLW,prTempLW,rTempC,rTempAl,
+     &                  prFuelTemp, prCellRadius, prBuckling)
          endif
          if(pcCellType .eq. 'W   ') then
-          call WWINP (pNF,prDensityLW,prTempLW,rTempAl,rTempC)
+          call WWINP (pNF,prDensityLW,prTempLW,rTempAl,rTempC,
+     &                prCoreRadius,prReflectorThickness)
          endif
-         if(pcCellType .eq. 'LW  ') then
-          call WLWINP(pNF,prDensityLW,prTempLW,prDensityLW,prTempLW)
+         if(pcCellType .eq. 'COOL') then
+          call WLWINP(pNF,prDensityLW,prTempLW,prDensityLW,
+     &                prTempLW, prFuelTemp, prCellRadius, prBuckling)
          endif
-         if(pcCellType .eq. 'BE  ') then
-          call WBEINP(pNF,prDensityLW,prTempLW,rTempBe,rTempAl)
+         if(pcCellType .eq. 'BERY') then
+          call WBEINP(pNF,prDensityLW,prTempLW,rTempBe,
+     &                rTempAl, prFuelTemp, prCellRadius, prBuckling)
          endif
-         if(pcCellType .eq. 'IC1 ') then
-          call WIC1INP(pNF,prDensityLW,prTempLW,rTempAl)
+         if(pcCellType .eq. 'CHN1') then
+          call WIC1INP(pNF,prDensityLW,prTempLW,
+     &                 rTempAl, prFuelTemp, prCellRadius, prBuckling)
          endif
-         if(pcCellType .eq. 'IC2 ') then
+         if(pcCellType .eq. 'CHN2') then
           call WIC2INP(pNF, prDensityLW, prTempLW, rTempAl,
-     &                 prDensityLW, prTempLW)
+     &                 prDensityLW, prTempLW, prFuelTemp, 
+     &                 prCellRadius, prBuckling)
          endif
-         if(pcCellType .eq. 'IC3 ') then
+         if(pcCellType .eq. 'CHN3') then
           call WIC3INP(pNF, prDensityLW, prTempLW, prDensityLW,
-     &                 prTempLW, rTempAl)
+     &                 prTempLW, rTempAl, prFuelTemp, 
+     &                 prCellRadius, prBuckling)
          endif
 !        new IC4 (pulz rod)
-         if((pcCellType .eq. 'IC4 ').or.(pcCellType .eq. 'TRCR')) THEN
-          call WIC4INP(pNF,prDensityLW,prTempLW,rTempAl)
+         if((pcCellType .eq. 'CHN4').or.(pcCellType .eq. 'TRCR')) THEN
+          call WIC4INP(pNF,prDensityLW,prTempLW,rTempAl, prFuelTemp,
+     &                 prCellRadius, prBuckling)
          endif
          call fPowerC(pNF,0.0,0.0,0,1,1,1)
 C*
@@ -280,7 +344,7 @@ C*
             write(pNF,1003) 'BEGINC'
          endif
          if(pnIsEo .eq. 1) then
-            write(pNF,*) '*EOF'
+            write(pNF,1003) '*EOF'
          endif
          return
  1003    format(A,F11.6,F11.6,I5)

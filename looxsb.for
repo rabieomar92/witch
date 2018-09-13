@@ -9,15 +9,16 @@
       
       
 c      program LOOXSB
-      subroutine looxsb
+      subroutine looxsb(pcWitchInputFileName, piLayerID)
       implicit none
-      
+         character(len=*), intent(in) :: pcWitchInputFileName
          character(len=30), parameter :: cFileWIMSHeader = 'WIMS-IN.$$$'
          character(len=30), parameter :: cFileWIMSCode   = 
      &      'WIMSD4.EXE'
-         character(len=30), parameter :: cFileWIMSLib    = 'WD4TRIC.BIN'
-         character(len=11) :: caWIMSInput(92)
-         character(len=500) :: caWIMSExecuteCmd(92)
+         integer, intent(in) :: piLayerID
+         character(len=30) :: cFileWIMSLib    = 'WD4TRIC.BIN'
+         character(len=11) :: caWIMSInput(128)
+         character(len=500) :: caWIMSExecuteCmd(128)
          character(len=50) :: cText, cFileWIMSInput
          character(len=100) :: cProgressText
          integer :: NFW, NFI
@@ -28,7 +29,11 @@ c      program LOOXSB
          
          data NFW, NFI / 10, 70 /
          nWIMSInput = 0
-      print*, ' Running ROUTINE-C.'
+         
+         if(trim(pcWitchInputFileName) .ne. '') then
+            cFileWIMSLib = pcWitchInputFileName
+         endif
+         
          open (unit=NFI, file=cFileWIMSHeader, status='old', err=911)
 100      continue      
          call rcsearch(NFI, 0, '   WIFLNM ',10, cText, iFlag)
@@ -39,39 +44,44 @@ c      program LOOXSB
          caWIMSInput(nWIMSInput) = cText(11:rclenf(cText))
          goto 100
 101      continue
-
          do i=1, nWIMSInput, 1
             write(caWIMSExecuteCmd(i), '(A,2X,A,2X,A,2X,A)')
      &   trim(cFileWIMSCode),
      &   trim(caWIMSInput(i)),
-     &   trim(caWIMSInput(i)(1:7)) // '.wou', trim(cFileWIMSLib)
+     &   trim(caWIMSInput(i)(1:7)) // '.WOU', trim(cFileWIMSLib)
          enddo
-          call system('cls') 
+         
+         print'(A,I2.2,A1)', '  Homogenizing LAYER-', piLayerID, '.'
          do i=1, nWIMSInput, 1
-            write(*,*)
-     &         'Running WIMS calculation for cell ',
-     &          trim(caWIMSInput(i)(5:7)), '.'
-            print'(A5,$)', ' 0% ['
-            do h=1, int(real(i)*40.0/92.0), 1
-               print'(A1,$)', '>'
-            enddo
-            if(int(real(i)*40.0/92.0) .lt. 92) then
-               do h=1, (40 - int(real(i)*40.0/92.0)), 1
-                  print'(A1,$)', ' '
-               enddo
-            endif
-            print'(A6)', '] 100%'
-            print*
-            print*
+           
+            write(*,'(A,A3,A4,I3.3,A2,A6,I2.2,A1)')
+     &         ' Processing cell ',
+     &          trim(caWIMSInput(i)(5:7)), ' of ', nWIMSInput, ' @', 
+     &         'LAYER-', piLayerID, '.'
+c            print'(A6,I2.2,A5,$)', 'LAYER-', piLayerID, ' 0%  '
+c            do h=1, int(real(i)*40.0/92.0), 1
+c               print'(A1,$)', '>'
+c            enddo
+c            if(int(real(i)*40.0/92.0) .lt. 92) then
+c               do h=1, (40 - int(real(i)*40.0/92.0)), 1
+c                  print'(A1,$)', ' '
+c               enddo
+c            endif
+c            print'(A6)', '  100%'
+c            print*
+c            print*
             call execute_command_line(' ' 
      &          // ' ' // trim(caWIMSExecuteCmd(i)),wait=.true.)
-            call system('cls')   
+            !call system('cls')
          enddo
          
          goto 999
 911      print*, ' Fatal Error: Could not open the header file.'
          stop
-999      print*, ' ROUTINE-C completed.'
+912      print*, ' Fatal Error: Could not open WITCH input file.'
+         stop
+999      continue
+
          close(unit=NFI)
       end subroutine
 
